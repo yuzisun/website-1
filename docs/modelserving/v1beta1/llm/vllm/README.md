@@ -3,11 +3,82 @@ Serving LLM models can be surprisingly slow even on high end GPUs, [vLLM](https:
 It supports [continuous batching](https://www.anyscale.com/blog/continuous-batching-llm-inference) for increased throughput and GPU utilization,
 [paged attention](https://vllm.ai) to address the memory bottleneck where in the autoregressive decoding process all the attention key value tensors(KV Cache) are kept in the GPU memory to generate next tokens.
 
-You can deploy the LLaMA model with built vLLM inference server container image using the `InferenceService` yaml API spec. 
-We have work in progress integrating `vLLM` with `Open Inference Protocol` and KServe observability stack.
+You can deploy the LLaMA model with triton inference server vLLM backend using the `InferenceService` yaml API spec. 
+Triton Inference Server vLLM backend implements the [Open Inference Protocol](https://github.com/kserve/open-inference-protocol) generate endpoint.
 
-The LLaMA model can be downloaded from [huggingface](https://huggingface.co/meta-llama/Llama-2-7b) and upload to your cloud storage.
+The Llama-2 7B AWQ model can be downloaded from [huggingface](https://huggingface.co/TheBloke/Llama-2-7B-AWQ/tree/main) and upload to your cloud storage.
+AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 3x and reduces memory requirements by 3x compared to FP16.
 
+### Upload the model to Cloud Storage
+1. Create `config.pbtxt` with vLLM backend
+```
+backend: "vllm"
+
+# Disabling batching in Triton, let vLLM handle the batching on its own.
+max_batch_size: 0
+
+# We need to use decoupled transaction policy for saturating
+# vLLM engine for max throughtput.
+# TODO [DLIS:5233]: Allow asynchronous execution to lift this
+# restriction for cases there is exactly a single response to
+# a single request.
+model_transaction_policy {
+  decoupled: True
+}
+# Note: The vLLM backend uses the following input and output names.
+# Any change here needs to also be made in model.py
+input [
+  {
+    name: "text_input"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+  },
+  {
+    name: "stream"
+    data_type: TYPE_BOOL
+    dims: [ 1 ]
+  },
+  {
+    name: "sampling_parameters"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+    optional: true
+  }
+]
+
+output [
+  {
+    name: "text_output"
+    data_type: TYPE_STRING
+    dims: [ -1 ]
+  }
+]
+
+# The usage of device is deferred to the vLLM engine
+instance_group [
+  {
+    count: 1
+    kind: KIND_MODEL
+  }
+]
+```
+
+2. Create a model repository with the following structure:
+
+```
+model_repository/
+  vllm_model/
+    config.pbtxt
+    1/
+      config.json
+      model.safetensors
+      model.json
+      generation_config.json
+```
+
+
+
+### Deploy the model
 === "Yaml"
     ```yaml
     kubectl apply -n kserve-test -f - <<EOF
@@ -17,21 +88,12 @@ The LLaMA model can be downloaded from [huggingface](https://huggingface.co/meta
       name: llama-2-7b
     spec:
       predictor:
-        containers:
-          - args:
-            - --port
-            - "8080"
-            - --model
-            - /mnt/models
-          command:
-            - python3
-            - -m
-            - vllm.entrypoints.api_server
-          env:
-            - name: STORAGE_URI
-              value: gcs://kfserving-examples/llm/huggingface/llama
-          image: kserve/vllmserver:latest
-          name: kserve-container
+        model:
+          modelFormat:
+            name: huggingface
+          runtime: kserve-tritonserver
+          runtimeVersion: 23.10-vllm-python-py3
+          storageUri: gs://kfserving-examples/models/triton/vllm/model_repository
           resources:
             limits:
               cpu: "4"
@@ -43,12 +105,10 @@ The LLaMA model can be downloaded from [huggingface](https://huggingface.co/meta
               nvidia.com/gpu: "1"
     ```
 
-!!! Warning
-    vLLM runtime is still experimental, please expect API changes and further integration in the next KServe release.
-
 === "kubectl"
 ```bash
-kubectl apply -f ./vllm.yaml
+kubectl get isvc llama-2-7b
+
 ```
 
 ## Benchmarking vLLM Runtime
