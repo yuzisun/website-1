@@ -6,10 +6,11 @@ It supports [continuous batching](https://www.anyscale.com/blog/continuous-batch
 You can deploy the LLaMA model with triton inference server vLLM backend using the `InferenceService` yaml API spec. 
 Triton Inference Server vLLM backend implements the [Open Inference Protocol](https://github.com/kserve/open-inference-protocol) generate endpoint.
 
-The Llama-2 7B AWQ model can be downloaded from [huggingface](https://huggingface.co/TheBloke/Llama-2-7B-AWQ/tree/main) and upload to your cloud storage.
-AutoAWQ is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 3x and reduces memory requirements by 3x compared to FP16.
 
 ### Upload the model to Cloud Storage
+The Llama-2 7B AWQ model can be downloaded from [huggingface](https://huggingface.co/TheBloke/Llama-2-7B-AWQ/tree/main) and upload to your cloud storage.
+[AutoAWQ](https://github.com/casper-hansen/AutoAWQ) is an easy-to-use package for 4-bit quantized models. AutoAWQ speeds up models by 3x and reduces memory requirements by 3x compared to FP16.
+
 1. Create `config.pbtxt` with vLLM backend
 ```
 backend: "vllm"
@@ -80,6 +81,7 @@ model_repository/
 
 ### Deploy the model
 === "Yaml"
+
     ```yaml
     kubectl apply -n kserve-test -f - <<EOF
     apiVersion: serving.kserve.io/v1beta1
